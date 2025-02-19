@@ -11,7 +11,7 @@ COPY . /app
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Expose port 80
-EXPOSE 80
+EXPOSE 8080
 
 # Run domain_checker.py when the container launches
 CMD ["python", "domain_checker.py"]

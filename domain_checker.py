@@ -27,8 +27,11 @@ openai.api_key = OPENAI_API_KEY
 # Add a dictionary to track user states
 user_states = {}
 
+# Get the port from the environment variable
+port = int(os.environ.get("PORT", 8080))
+
 def generate_domain_ideas(theme):
-    prompt = f"""Generate a list of 25 domain names ending in .ai based on the theme: {theme}. 
+    prompt = f"""Generate a list of 5 domain names ending in .ai based on the theme: {theme}. 
     The names should be closest to the theme. Example theme: english soccer teams 
     Example domain names: chelsea.ai, liverpool.ai, manchesterunited.ai
     Provide each domain name on a new line without any numbering or additional text."""
