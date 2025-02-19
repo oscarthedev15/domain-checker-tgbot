@@ -7,11 +7,11 @@ WORKDIR /app
 # Copy the current directory contents into the container at /app
 COPY . /app
 
-# Install dependencies
+# Install any needed packages specified in requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Expose port 8080 for Cloud Run
+# Expose port 80
 EXPOSE 8080
 
-# Run the Flask app with Gunicorn
-CMD ["gunicorn", "--bind", "0.0.0.0:8080", "domain_checker:app"]
+# Run domain_checker.py when the container launches
+CMD ["python", "domain_checker.py"]
