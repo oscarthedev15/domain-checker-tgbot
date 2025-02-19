@@ -1,5 +1,5 @@
 # Use an official Python runtime as a parent image
-FROM python:latest
+FROM python:3.11
 
 # Set the working directory
 WORKDIR /app
@@ -8,9 +8,10 @@ WORKDIR /app
 COPY . /app
 
 # Install any needed packages specified in requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+RUN apt-get update && apt-get install -y libssl-dev && \
+    pip install --no-cache-dir -r requirements.txt
 
-# Expose port 80
+# Expose port 8080
 EXPOSE 8080
 
 # Run domain_checker.py when the container launches

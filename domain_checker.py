@@ -6,19 +6,14 @@ from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackContext, filters
 from telegram.ext.filters import TEXT, COMMAND
-from flask import Flask, request, jsonify
-import asyncio
-import nest_asyncio
 
 load_dotenv()
-
-# Apply the nest_asyncio patch
-nest_asyncio.apply()
 
 # Load API keys from environment variables
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 WHOIS_API_KEY = os.getenv("WHOIS_API_KEY")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+URL = os.getenv("URL")
 
 WHOIS_API_URL = "https://www.whoisxmlapi.com/whoisserver/WhoisService"
 
@@ -30,17 +25,6 @@ openai.api_key = OPENAI_API_KEY
 
 # Add a dictionary to track user states
 user_states = {}
-
-# Get the port from the environment variable
-port = int(os.environ.get("PORT", 8080))
-
-app = Flask(__name__)
-
-@app.route('/webhook', methods=['POST'])
-def webhook():
-    update = Update.de_json(request.get_json(force=True), application.bot)
-    asyncio.run(application.process_update(update))
-    return jsonify({'status': 'ok'})
 
 def generate_domain_ideas(theme):
     prompt = f"""Generate a list of 5 domain names ending in .ai based on the theme: {theme}. 
@@ -113,26 +97,26 @@ async def handle_message(update: Update, context: CallbackContext):
     else:
         await update.message.reply_text("Please use /search to start a new theme search.")
 
-async def main():
-    global application
+def main():
+    if not TELEGRAM_BOT_TOKEN or not URL:
+        logging.error("Environment variables TELEGRAM_BOT_TOKEN or URL are not set.")
+        return
+
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("search", search))
     application.add_handler(MessageHandler(TEXT & ~COMMAND, handle_message))
 
-    # Initialize the application
-    await application.initialize()
+    PORT = 8080  # Use port 8080 for webhook
+    HOOK_URL = f"{URL}/{TELEGRAM_BOT_TOKEN}"
+    logging.info(f"Starting webhook on port {PORT} with URL {HOOK_URL}")
 
-    # Set webhook
-    webhook_url = os.getenv("URL")  # Replace with your ngrok URL
-    await application.bot.set_webhook(url=webhook_url)
+    # Manually set the webhook
+    application.bot.set_webhook(url=HOOK_URL)
 
-    # Start the application
-    await application.run_polling()
-
-    # Run Flask app
-    app.run(host='0.0.0.0', port=port)
+    # Start the webhook server
+    application.run_webhook(listen='0.0.0.0', port=PORT, url_path=TELEGRAM_BOT_TOKEN, webhook_url=HOOK_URL)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
