@@ -8,15 +8,17 @@ from telegram.ext import Application, CommandHandler, MessageHandler, CallbackCo
 from telegram.ext.filters import TEXT, COMMAND
 from flask import Flask, request, jsonify
 import asyncio
+import nest_asyncio
 
 load_dotenv()
 
+# Apply the nest_asyncio patch
+nest_asyncio.apply()
 
 # Load API keys from environment variables
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 WHOIS_API_KEY = os.getenv("WHOIS_API_KEY")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-
 
 WHOIS_API_URL = "https://www.whoisxmlapi.com/whoisserver/WhoisService"
 
@@ -37,7 +39,7 @@ app = Flask(__name__)
 @app.route('/webhook', methods=['POST'])
 def webhook():
     update = Update.de_json(request.get_json(force=True), application.bot)
-    application.process_update(update)
+    asyncio.run(application.process_update(update))
     return jsonify({'status': 'ok'})
 
 def generate_domain_ideas(theme):
@@ -111,7 +113,7 @@ async def handle_message(update: Update, context: CallbackContext):
     else:
         await update.message.reply_text("Please use /search to start a new theme search.")
 
-def main():
+async def main():
     global application
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
@@ -119,15 +121,18 @@ def main():
     application.add_handler(CommandHandler("search", search))
     application.add_handler(MessageHandler(TEXT & ~COMMAND, handle_message))
 
-    # Set webhook
-    # Temporarily set to localhost for development
-    webhook_url = f"https://domain-checker-tgbot-641042907649.us-central1.run.app/webhook"  # Replace with your ngrok URL
+    # Initialize the application
+    await application.initialize()
 
-    # Use asyncio to run the asynchronous set_webhook method
-    asyncio.run(application.bot.set_webhook(url=webhook_url))
+    # Set webhook
+    webhook_url = os.getenv("URL")  # Replace with your ngrok URL
+    await application.bot.set_webhook(url=webhook_url)
+
+    # Start the application
+    await application.run_polling()
 
     # Run Flask app
     app.run(host='0.0.0.0', port=port)
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
