@@ -1,5 +1,5 @@
 # Use an official Python runtime as a parent image
-FROM python:3.11-slim
+FROM python:latest
 
 # Set the working directory
 WORKDIR /app
@@ -7,11 +7,11 @@ WORKDIR /app
 # Copy the current directory contents into the container at /app
 COPY . /app
 
-# Install any needed packages specified in requirements.txt
+# Install dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Expose port 80
+# Expose port 8080 for Cloud Run
 EXPOSE 8080
 
-# Run domain_checker.py when the container launches
-CMD ["python", "domain_checker.py"]
+# Run the Flask app with Gunicorn
+CMD ["gunicorn", "--bind", "0.0.0.0:8080", "domain_checker:app"]

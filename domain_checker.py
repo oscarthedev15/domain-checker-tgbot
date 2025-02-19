@@ -2,71 +2,39 @@ import os
 import openai
 import requests
 import logging
+from flask import Flask, request
 from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackContext, filters
-from telegram.ext.filters import TEXT, COMMAND
 
 load_dotenv()
 
+app = Flask(__name__)
 
 # Load API keys from environment variables
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 WHOIS_API_KEY = os.getenv("WHOIS_API_KEY")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
-
-WHOIS_API_URL = "https://www.whoisxmlapi.com/whoisserver/WhoisService"
+# Initialize Telegram Bot
+application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
 # Set up logging
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
-# OpenAI API setup
-openai.api_key = OPENAI_API_KEY
-
-# Add a dictionary to track user states
+# User states tracking
 user_states = {}
 
-# Get the port from the environment variable
-port = int(os.environ.get("PORT", 8080))
+@app.route("/", methods=["GET"])
+def home():
+    return "Domain Checker Bot is running!"
 
-def generate_domain_ideas(theme):
-    prompt = f"""Generate a list of 5 domain names ending in .ai based on the theme: {theme}. 
-    The names should be closest to the theme. Example theme: english soccer teams 
-    Example domain names: chelsea.ai, liverpool.ai, manchesterunited.ai
-    Provide each domain name on a new line without any numbering or additional text."""
-
-    client = openai.OpenAI(api_key=OPENAI_API_KEY)
-    response = client.chat.completions.create(
-        model="gpt-4o",
-        messages=[{"role": "system", "content": "You are a helpful AI domain name generator."},
-                  {"role": "user", "content": prompt}]
-    )
-    message_content = response.choices[0].message.content.strip()
-    domains = message_content.split("\n")
-    # Clean up domain names to remove any numbering or extra characters
-    cleaned_domains = [domain.split()[-1] for domain in domains if domain.strip()]
-    logging.info(f"Generated domains: {cleaned_domains}")
-    return cleaned_domains
-
-def check_domain_availability(domain):
-    params = {
-        "apiKey": WHOIS_API_KEY,
-        "domainName": domain,
-        "outputFormat": "json"
-    }
-    response = requests.get(WHOIS_API_URL, params=params)
-    logging.info(f"Response: {response.json()} \n\n\n\n")
-    data = response.json()
-
-    # Check for domain availability based on the presence of 'MISSING_WHOIS_DATA'
-    
-    if 'WhoisRecord' in data and data['WhoisRecord'].get('dataError') == 'MISSING_WHOIS_DATA':
-        logging.info(f"Domain {domain} is available")
-        return True
-    else:
-        logging.info(f"Domain {domain} is not available")
-        return False
+@app.route("/webhook", methods=["POST"])
+def webhook():
+    """Handle Telegram webhook updates."""
+    update = Update.de_json(request.get_json(), application.bot)
+    application.update_queue.put(update)
+    return "ok", 200
 
 async def start(update: Update, context: CallbackContext):
     await update.message.reply_text('Welcome! Use /search to find .ai domain ideas based on a theme.')
@@ -85,14 +53,15 @@ async def handle_message(update: Update, context: CallbackContext):
         # Show loading message
         loading_message = await update.message.reply_text("Checking availability, please wait...")
 
+        # Generate domain ideas
         domains = generate_domain_ideas(theme)
-        
+
         results = []
         for domain in domains:
             available = check_domain_availability(domain)
             status = "✅ Available" if available else "❌ Taken"
             results.append(f"{domain}: {status}")
-        
+
         # Edit the loading message with the results
         await loading_message.edit_text("\n".join(results))
 
@@ -101,14 +70,12 @@ async def handle_message(update: Update, context: CallbackContext):
     else:
         await update.message.reply_text("Please use /search to start a new theme search.")
 
-def main():
-    application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
-
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("search", search))
-    application.add_handler(MessageHandler(TEXT & ~COMMAND, handle_message))
-
-    application.run_polling()
+def set_webhook():
+    """Set up the webhook for Telegram."""
+    webhook_url = "https://domain-checker-tgbot-641042907649.us-central1.run.app"
+    application.bot.set_webhook(url=f"{webhook_url}/webhook")
+    logging.info(f"Webhook set: {webhook_url}/webhook")
 
 if __name__ == "__main__":
-    main()
+    set_webhook()  # Set webhook on startup
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
