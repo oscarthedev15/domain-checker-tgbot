@@ -1,4 +1,4 @@
-name: CICD-EB
+name: Deploy to DigitalOcean Functions
 
 on:
   push:
@@ -6,90 +6,40 @@ on:
       - main
 
 jobs:
-  build-and-deploy:
+  deploy:
     runs-on: ubuntu-latest
-    env:
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
-      AWS_REGION: us-east-2
-      APPLICATION_NAME: yap-bot
-      EB_ENV_NAME: Yap-bot-env-1
+
     steps:
-      - name: Checkout Source
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v2
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
-
-      - name: Log in to Amazon ECR
+      - name: Install dependencies
         run: |
-          echo "Logging in to Amazon ECR..."
-          aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
-      - name: Build Docker image
-        id: build-image
+      - name: Install doctl
         run: |
-          IMAGE_NAME=yap-bot
-          ECR_REGISTRY=${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_REGION.amazonaws.com
-          IMAGE_TAG=${{ github.sha }}
-          docker buildx build --platform linux/amd64 -t $ECR_REGISTRY/$IMAGE_NAME:$IMAGE_TAG -f ./Dockerfile ./ --load
-          docker push $ECR_REGISTRY/$IMAGE_NAME:$IMAGE_TAG
+          sudo snap install doctl
 
-      - name: Install pip and AWS CLI
+      - name: Authenticate with DigitalOcean
+        env:
+          DIGITALOCEAN_ACCESS_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
         run: |
-          sudo apt-get update
-          sudo apt-get install -y python3-pip
-          pip3 install awsebcli awscli
+          doctl auth init -t $DIGITALOCEAN_ACCESS_TOKEN
 
-      - name: Initialize Elastic Beanstalk
+      - name: Connect to DigitalOcean Functions Namespace
         run: |
-          eb init -p docker $APPLICATION_NAME --region $AWS_REGION
-          eb use $EB_ENV_NAME
+          doctl serverless connect domain-checker-function
 
-      - name: Deploy to Elastic Beanstalk
+      - name: Clean previous deployment
+        run: rm -rf .deployed
+
+      - name: Deploy to DigitalOcean Functions
         run: |
-          IMAGE_NAME=yap-bot
-          ECR_REGISTRY=${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_REGION.amazonaws.com
-          IMAGE_TAG=${{ github.sha }}
-          VERSION_LABEL=${{ github.sha }}
-          S3_BUCKET=$APPLICATION_NAME-deployments
-
-          # Create Dockerrun.aws.json
-          cat <<EOF > Dockerrun.aws.json
-          {
-            "AWSEBDockerrunVersion": "1",
-            "Image": {
-              "Name": "$ECR_REGISTRY/$IMAGE_NAME:$IMAGE_TAG",
-              "Update": "true"
-            },
-            "Ports": [
-              {
-                "ContainerPort": "8080",
-                "HostPort": "8080"
-              }
-            ]
-          }
-          EOF
-
-          # Create an S3 bucket for deployment if it doesn't exist (ignore error if it already exists)
-          aws s3 mb s3://$S3_BUCKET --region $AWS_REGION || true
-
-          # Zip the Dockerrun.aws.json file
-          zip $VERSION_LABEL.zip Dockerrun.aws.json
-
-          # Upload the zip file to S3
-          aws s3 cp $VERSION_LABEL.zip s3://$S3_BUCKET/ --region $AWS_REGION
-
-          # Create a new application version using AWS CLI
-          aws elasticbeanstalk create-application-version \
-            --application-name $APPLICATION_NAME \
-            --version-label $VERSION_LABEL \
-            --source-bundle S3Bucket=$S3_BUCKET,S3Key=$VERSION_LABEL.zip \
-            --region $AWS_REGION
-
-          # Deploy the new version
-          eb deploy --version $VERSION_LABEL --region $AWS_REGION
+          doctl serverless deploy .
