@@ -2,3 +2,6 @@
 __pycache__
 *.pyc
 project.yml
+aws_lambda/template.yaml
+aws_lambda/test_event.json
+aws_lambda/.aws-sam

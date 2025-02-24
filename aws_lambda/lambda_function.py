@@ -6,6 +6,8 @@ import requests
 import logging
 from pip._vendor import requests
 
+logging.basicConfig(level=logging.INFO)
+
 def generate_domain_ideas(theme):
     prompt = f"""Generate a list of 5 domain names ending in .ai based on the theme: {theme}. 
     The names should be closest to the theme. Example theme: english soccer teams 
@@ -27,15 +29,23 @@ def generate_domain_ideas(theme):
     return cleaned_domains
 
 def lambda_handler(event, context):
+    logging.info("Lambda function invoked")
+    logging.info(f"Received event: {event}")
     body = json.loads(event.get("body", "{}"))
     message = body.get("message", {})
     chat_id = message.get("chat", {}).get("id")
     text = message.get("text", "")
+    token = os.environ["TELEGRAM_TOKEN"]
     
-    if text:
+    if text and token:
         reply = f"You said: {text}"
-        token = os.environ["TELEGRAM_TOKEN"]
-        requests.post(f"https://api.telegram.org/bot{token}/sendMessage", 
-                      json={"chat_id": chat_id, "text": reply})
+        logging.info(f"Sending reply: {reply}")
+        response = requests.post(f"https://api.telegram.org/bot{token}/sendMessage", 
+                                 json={"chat_id": chat_id, "text": reply})
+        logging.info(f"Telegram response: {response.json()}")
+        return {"statusCode": 200, "body": json.dumps("OK Pu$$y")}
     
-    return {"statusCode": 200, "body": json.dumps("OK")}
+    if not token: 
+        logging.error("TELEGRAM_TOKEN is not set")
+        return {"statusCode": 500, "body": json.dumps("Error: TELEGRAM_TOKEN is not set")}
+

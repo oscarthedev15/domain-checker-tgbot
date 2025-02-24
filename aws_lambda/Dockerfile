@@ -8,8 +8,8 @@ WORKDIR /aws_lambda
 COPY lambda_function.py .
 
 # Install any dependencies if needed
-# COPY requirements.txt .
-# RUN pip install -r requirements.txt
+COPY requirements.txt .
+RUN pip install -r requirements.txt
 
 # Command to run the lambda function (if needed for testing)
 # CMD ["python", "lambda_function.py"]
