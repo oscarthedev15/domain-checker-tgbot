@@ -1,0 +1,3 @@
+{
+  "body": "{\"message\": {\"chat\": {\"id\": 123456789}, \"text\": \"Hello, Lambda!\"}}"
+}
