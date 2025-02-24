@@ -1,0 +1,13 @@
+[
+  {
+    "apihost": "https://faas-nyc1-2ef2e6cc.doserverless.co",
+    "namespace": "fn-2cfc83cb-c328-49ea-a80b-a24c321bc771",
+    "packageVersions": {},
+    "actionVersions": {
+      "domain_functions/telegram_webhook": {
+        "digest": "d147e77e85d6c339dcea23676af380c857443146a2d76414948a28818e8c370f",
+        "version": "0.0.1"
+      }
+    }
+  }
+]
