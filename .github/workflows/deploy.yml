@@ -3,7 +3,7 @@ name: Deploy to DigitalOcean Functions
 on:
   push:
     branches:
-      - main
+      - digitalocean-function
 
 jobs:
   deploy:
