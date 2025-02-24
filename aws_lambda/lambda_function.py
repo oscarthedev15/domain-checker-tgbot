@@ -1,13 +1,40 @@
 import json
 import os
-import os
 import openai
 import requests
 import logging
-from pip._vendor import requests
+from telegram import Update
+from telegram.ext import Application, CommandHandler, CallbackContext
+from dotenv import load_dotenv
+import asyncio
 
 logging.basicConfig(level=logging.DEBUG)
 logging.debug("Starting lambda function")
+
+# Load environment variables from .env file
+load_dotenv()
+
+# Load environment variables
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+
+# OpenAI API setup
+openai.api_key = OPENAI_API_KEY
+
+# Initialize the bot application
+app = Application.builder().token(TELEGRAM_TOKEN).build()
+
+# Start command handler
+async def start(update: Update, context: CallbackContext):
+    await update.message.reply_text('Welcome! Use /search to find .ai domain ideas based on a theme.')
+
+# Set up the handlers for the bot
+def setup_handlers():
+    app.add_handler(CommandHandler("start", start))
+    # Add other handlers as needed
+
+# Call setup_handlers once when the Lambda container is initialized
+setup_handlers()
 
 def generate_domain_ideas(theme):
     prompt = f"""Generate a list of 5 domain names ending in .ai based on the theme: {theme}. 
@@ -29,24 +56,25 @@ def generate_domain_ideas(theme):
     logging.info(f"Generated domains: {cleaned_domains}")
     return cleaned_domains
 
+# Lambda handler function for webhook
 def handler(event, context):
     logging.info("Lambda function invoked")
     logging.info(f"Received event: {event}")
-    body = json.loads(event.get("body", "{}"))
-    message = body.get("message", {})
-    chat_id = message.get("chat", {}).get("id")
-    text = message.get("text", "")
-    token = os.environ["TELEGRAM_TOKEN"]
-    
-    if text and token:
-        reply = f"You said: {text}"
-        logging.info(f"Sending reply: {reply}")
-        response = requests.post(f"https://api.telegram.org/bot{token}/sendMessage", 
-                                 json={"chat_id": chat_id, "text": reply})
-        logging.info(f"Telegram response: {response.json()}")
-        return {"statusCode": 200, "body": json.dumps("OK Pu$$y")}
-    
-    if not token: 
-        logging.error("TELEGRAM_TOKEN is not set")
-        return {"statusCode": 500, "body": json.dumps("Error: TELEGRAM_TOKEN is not set")}
 
+    # Extract the incoming Telegram webhook update from the event body
+    body = json.loads(event.get("body", "{}"))
+
+    # Parse the update object from the incoming body
+    update = Update.de_json(body, app.bot)
+
+    # Initialize and process the update
+    async def process():
+        await app.initialize()
+        await app.process_update(update)
+
+    asyncio.run(process())
+
+    return {
+        "statusCode": 200,
+        "body": json.dumps("OK")
+    }
