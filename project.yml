@@ -1,5 +1,0 @@
-packages:
-  - name: domain_functions
-    functions:
-      - name: digital_ocean_function
-        runtime: "python:default"
