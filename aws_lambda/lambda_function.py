@@ -29,7 +29,7 @@ def generate_domain_ideas(theme):
     logging.info(f"Generated domains: {cleaned_domains}")
     return cleaned_domains
 
-def lambda_handler(event, context):
+def handler(event, context):
     logging.info("Lambda function invoked")
     logging.info(f"Received event: {event}")
     body = json.loads(event.get("body", "{}"))
