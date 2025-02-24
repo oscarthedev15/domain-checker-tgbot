@@ -6,7 +6,8 @@ import requests
 import logging
 from pip._vendor import requests
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
+logging.debug("Starting lambda function")
 
 def generate_domain_ideas(theme):
     prompt = f"""Generate a list of 5 domain names ending in .ai based on the theme: {theme}. 
