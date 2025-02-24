@@ -38,6 +38,6 @@ jobs:
       - name: Deploy to AWS Lambda
         run: |
           aws lambda update-function-code \
-            --function-name domain-tg-bot \
-            --image-uri ${{ secrets.AWS_ECR_REGISTRY }}/$ECR_REPOSITORY:latest \
+            --function-name tg-ai-domain \
+            --image-uri $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
             --region ${{ secrets.AWS_REGION }}
