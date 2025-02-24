@@ -35,19 +35,13 @@ jobs:
           docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
 
-      - name: Get Image Digest
-        id: image_digest
-        run: |
-          DIGEST=$(aws ecr describe-images \
-            --repository-name $ECR_REPOSITORY \
-            --region $AWS_REGION \
-            --query 'imageDetails[?imageTags[0]==`latest`].imageDigest' \
-            --output text)
-          echo "IMAGE_DIGEST=$DIGEST" >> $GITHUB_ENV
-
       - name: Deploy to AWS Lambda
+        env:
+          ECR_REGISTRY: ${{ secrets.AWS_ECR_REGISTRY }}
+          ECR_REPOSITORY: ${{ secrets.AWS_ECR_REPOSITORY }}
+          IMAGE_TAG: latest
         run: |
           aws lambda update-function-code \
             --function-name tg-ai-domain \
-            --image-uri $ECR_REGISTRY/$ECR_REPOSITORY@sha256:$IMAGE_DIGEST \
+            --image-uri $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
             --region ${{ secrets.AWS_REGION }}
