@@ -3,9 +3,13 @@ import openai
 import requests
 import logging
 import time
+import json
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackContext, filters, AIORateLimiter
+from telegram.ext import (
+    ApplicationBuilder, CommandHandler, MessageHandler, 
+    CallbackContext, filters, PicklePersistence
+)
 
 load_dotenv()
 
@@ -23,11 +27,6 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 # OpenAI API setup
 openai.api_key = OPENAI_API_KEY
 
-# Add dictionaries to track user states and rate limits
-user_states = {}
-user_request_counts = {}
-user_search_timestamps = {}  # Store timestamps of last /search command
-
 # Constants for rate limiting
 REQUEST_LIMIT = 3
 TIME_WINDOW = 60  # 60 seconds
@@ -41,7 +40,7 @@ def generate_domain_ideas(theme):
 
     client = openai.OpenAI(api_key=OPENAI_API_KEY)
     response = client.chat.completions.create(
-        model="gpt-4o",
+        model="gpt-3.5-turbo",
         messages=[{"role": "system", "content": "You are a helpful AI domain name generator."},
                   {"role": "user", "content": prompt}]
     )
@@ -68,48 +67,73 @@ def check_domain_availability(domain):
         return False
 
 async def start(update: Update, context: CallbackContext):
+    # Initialize user data if not present
+    if 'state' not in context.user_data:
+        context.user_data['state'] = None
+    if 'search_timestamp' not in context.user_data:
+        context.user_data['search_timestamp'] = 0
+    if 'request_count' not in context.user_data:
+        context.user_data['request_count'] = 0
+    if 'request_start_time' not in context.user_data:
+        context.user_data['request_start_time'] = time.time()
+        
     await update.message.reply_text('Welcome! Use /search to find .ai domain ideas based on a theme.')
 
 async def search(update: Update, context: CallbackContext):
-    user_id = update.message.from_user.id
+    # Initialize user data if not present
+    if 'state' not in context.user_data:
+        context.user_data['state'] = None
+    if 'search_timestamp' not in context.user_data:
+        context.user_data['search_timestamp'] = 0
+        
     current_time = time.time()
 
     # Check if the user is within the cooldown period
-    if user_id in user_search_timestamps:
-        elapsed_time = current_time - user_search_timestamps[user_id]
-        if elapsed_time < SEARCH_COOLDOWN:
-            remaining_time = SEARCH_COOLDOWN - elapsed_time
-            await update.message.reply_text(f"⏳ Please wait {int(remaining_time)} seconds before using /search again.")
-            return
+    elapsed_time = current_time - context.user_data['search_timestamp']
+    if elapsed_time < SEARCH_COOLDOWN:
+        remaining_time = int(SEARCH_COOLDOWN - elapsed_time)
+        await update.message.reply_text(f"⏳ Please wait {remaining_time} seconds before using /search again.")
+        return
 
+    # Set the state before updating the timestamp
+    context.user_data['state'] = 'waiting_for_theme'
     # Update the last search timestamp
-    user_search_timestamps[user_id] = current_time
-
-    user_states[user_id] = 'waiting_for_theme'
+    context.user_data['search_timestamp'] = current_time
+    
+    # Save the user data to ensure persistence
+    await context.application.persistence.update_user_data(update.effective_user.id, context.user_data)
+    
     await update.message.reply_text('Please send me a theme to generate domain ideas.')
 
 async def handle_message(update: Update, context: CallbackContext):
-    user_id = update.message.from_user.id
+    # Initialize user data if not present
+    if 'state' not in context.user_data:
+        context.user_data['state'] = None
+    if 'request_count' not in context.user_data:
+        context.user_data['request_count'] = 0
+    if 'request_start_time' not in context.user_data:
+        context.user_data['request_start_time'] = time.time()
+    
+    # Debug logging to help diagnose the issue
+    logging.info(f"Current state for user {update.effective_user.id}: {context.user_data['state']}")
+        
     current_time = time.time()
 
-    # Initialize user request data if not present
-    if user_id not in user_request_counts:
-        user_request_counts[user_id] = {'count': 0, 'start_time': current_time}
-
     # Check if the time window has passed
-    elapsed_time = current_time - user_request_counts[user_id]['start_time']
+    elapsed_time = current_time - context.user_data['request_start_time']
     if elapsed_time > TIME_WINDOW:
-        user_request_counts[user_id] = {'count': 0, 'start_time': current_time}
+        context.user_data['request_count'] = 0
+        context.user_data['request_start_time'] = current_time
 
     # Check if the user has exceeded the request limit
-    if user_request_counts[user_id]['count'] >= REQUEST_LIMIT:
+    if context.user_data['request_count'] >= REQUEST_LIMIT:
         await update.message.reply_text("⚠️ You have exceeded the request limit. Please try again later.")
         return
 
-    # Increment the request count
-    user_request_counts[user_id]['count'] += 1
-
-    if user_states.get(user_id) == 'waiting_for_theme':
+    if context.user_data['state'] == 'waiting_for_theme':
+        # Increment the request count
+        context.user_data['request_count'] += 1
+        
         theme = update.message.text
         await update.message.reply_text(f"🔍 Generating domain ideas based on theme: {theme}...")
 
@@ -118,23 +142,29 @@ async def handle_message(update: Update, context: CallbackContext):
         domains = generate_domain_ideas(theme)
         
         results = []
-        buttons = []
+        keyboard = []
         for domain in domains:
             available = check_domain_availability(domain)
             status = "✅ Available" if available else "❌ Taken"
             results.append(f"{domain}: {status}")
             
             if available:
+                # Create a separate row for each button
                 button = InlineKeyboardButton(f"Buy {domain} on GoDaddy", url=f"https://www.godaddy.com/domainsearch/find?checkAvail=1&tmskey=&domainToCheck={domain}")
-                buttons.append(button)
+                keyboard.append([button])  # Each button in its own row
 
-        await loading_message.edit_text("\n".join(results))
+        # Combine results and buttons in a single message
+        result_text = "\n".join(results)
+        if keyboard:
+            result_text += "\n\nAvailable domains:"
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await loading_message.edit_text(result_text, reply_markup=reply_markup)
+        else:
+            await loading_message.edit_text(result_text)
 
-        if buttons:
-            reply_markup = InlineKeyboardMarkup([buttons])
-            await update.message.reply_text("Available domains:", reply_markup=reply_markup)
-
-        user_states[user_id] = None
+        # Reset state and save user data
+        context.user_data['state'] = None
+        await context.application.persistence.update_user_data(update.effective_user.id, context.user_data)
     else:
         await update.message.reply_text("❗ Please use /search to start a new theme search.")
 
@@ -143,15 +173,15 @@ def main():
         logging.error("Environment variables TELEGRAM_TOKEN or URL are not set.")
         return
 
-    # Configure the rate limiter
-    rate_limiter = AIORateLimiter(overall_max_rate=30, overall_time_period=1, group_max_rate=1, group_time_period=60)
+    # Set up persistence with PicklePersistence
+    persistence = PicklePersistence(filepath='bot_data.pickle')
 
-    # Build the application with the rate limiter
-    application = ApplicationBuilder().token(TELEGRAM_TOKEN).rate_limiter(rate_limiter).build()
+    # Build the application with persistence
+    application = ApplicationBuilder().token(TELEGRAM_TOKEN).persistence(persistence).build()
 
     # Add handlers
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("search", search, block=True))
+    application.add_handler(CommandHandler("search", search))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     PORT = 8080
